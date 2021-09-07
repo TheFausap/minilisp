@@ -616,10 +616,13 @@ static Obj *read_string(void *root, FILE *f) {
 
 static Obj *read_special_num(void *root, FILE *f) {
     char c = fgetc(f); // special number indicator
+    char dg[MAXDIGITS];
+    int j = -1;
+    long z;
     Obj *r;
     
     if (c == 'B') {
-        printf("BIGNUM\n");
+        //printf("BIGNUM\n");
         r = alloc(root, TBIGN, sizeof(bignum));
         r->type = TBIGN;
         r->bvalue = malloc(sizeof(bignum));
@@ -638,9 +641,14 @@ static Obj *read_special_num(void *root, FILE *f) {
         r->bvalue->lastdigit = -1;
         
         while (isdigit((c=fgetc(f)))) {
-            r->bvalue->lastdigit ++;
-            r->bvalue->digits[ r->bvalue->lastdigit ] = c - '0';
+            dg[++j] = c - '0';
         }
+        
+        for (z=j;z>=0;z--) {
+            r->bvalue->lastdigit ++;
+            r->bvalue->digits[ r->bvalue->lastdigit ] = dg[z];
+        }
+    
         if (c == '0') r->bvalue->lastdigit = 0;
         
         //fgetc(f); // skip )
@@ -690,7 +698,7 @@ void print_bignum(bignum *n) {
 
     printf("#B(");
     if (n->signbit == MINUS) printf("- ");
-    for (i=0;i<=n->lastdigit; i++)
+    for (i=n->lastdigit; i>=0; i--)
         printf("%c",'0'+ n->digits[i]);
     printf(")");
 }
@@ -947,6 +955,9 @@ void digit_shift(bignum *n, int d)        /* multiply n by 10^d */
     n->lastdigit = n->lastdigit + d;
 }
 
+// return 0 if equal
+// return +1 is b > a
+// return -1 if a > b
 int compare_bignum(bignum *a, bignum *b)
 {
     int i;                /* counter */
@@ -1496,17 +1507,33 @@ static Obj *prim_if(void *root, Obj **env, Obj **list) {
     return *els == Nil ? Nil : progn(root, env, els);
 }
 
-// (= <integer> <integer>)
+// (= <integer> | <double> | <bignum> <integer> | <double> | <bignum>)
 static Obj *prim_num_eq(void *root, Obj **env, Obj **list) {
+    bignum z;
+    long t;
     if (length(*list) != 2)
         error("Malformed =");
     Obj *values = eval_list(root, env, list);
     Obj *x = values->car;
     Obj *y = values->cdr->car;
-    if ((x->type != TLONG && x->type != TDOUBLE) ||
-        (y->type != TLONG && y->type != TDOUBLE))
+    if ((x->type != TLONG && x->type != TDOUBLE && x->type != TBIGN) ||
+        (y->type != TLONG && y->type != TDOUBLE && y->type != TBIGN))
         error("= only takes numbers");
-    return x->value == y->value ? True : Nil;
+    if (x->type == TBIGN && y->type == TBIGN) {
+        return (compare_bignum(x->bvalue, y->bvalue) == 0) ? True : Nil;
+    } else if (x->type == TBIGN) {
+        t = (y->type == TLONG) ? y->value : (long) y->dvalue;
+        long_to_bignum(t, &z);
+        return (compare_bignum(x->bvalue, &z) == 0) ? True : Nil;
+    } else if (y->type == TBIGN) {
+        t = (x->type == TLONG) ? x->value : (long) x->dvalue;
+        long_to_bignum(t, &z);
+        return (compare_bignum(y->bvalue, &z) == 0) ? True : Nil;
+    } else {
+        double u1 = (x->type == TLONG) ? (double)x->value : x->dvalue;
+        double u2 = (y->type == TLONG) ? (double)y->value : y->dvalue;
+        return u1 == u2 ? True : Nil;
+    }
 }
 
 // (eq expr expr)
