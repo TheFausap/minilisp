@@ -29,7 +29,18 @@ static __attribute((noreturn)) void error(char *fmt, ...) {
     exit(1);
 }
 
-#define MAX_STRING 1024
+#define MAX_STRING   1024
+
+#define MAXDIGITS    100      /* maximum length bignum */
+
+#define PLUS         1        /* positive sign bit */
+#define MINUS       -1        /* negative sign bit */
+
+typedef struct {
+    char digits[MAXDIGITS];   /* represent the number */
+    int signbit;              /* 1 if positive, -1 if negative */
+    int lastdigit;            /* index of high-order digit */
+} bignum;
 
 //======================================================================
 // Lisp objects
@@ -40,6 +51,7 @@ enum {
     // Regular objects visible from the user
     TLONG = 1,
     TDOUBLE,
+    TBIGN,
     TCELL,
     TSYMBOL,
     TSTRING,
@@ -84,6 +96,8 @@ typedef struct Obj {
         long value;
         // Double
         double dvalue;
+        // Bignum
+        bignum *bvalue;
         // Cell
         struct {
             struct Obj *car;
@@ -590,6 +604,43 @@ static Obj *read_string(void *root, FILE *f) {
     return make_string(root, buf);
 }
 
+static Obj *read_special_num(void *root, FILE *f) {
+    char c = fgetc(f); // special number indicator
+    Obj *r;
+    
+    if (c == 'B') {
+        printf("BIGNUM\n");
+        r = alloc(root, TBIGN, sizeof(bignum));
+        r->type = TBIGN;
+        r->bvalue = malloc(sizeof(bignum));
+        c = fgetc(f);  // skip (
+        c = fgetc(f);  // check for sign
+        
+        if (c == '-') {
+            r->bvalue->signbit = MINUS;
+        } else {
+            r->bvalue->signbit = PLUS;
+            ungetc(c,f); // there is no +
+        }
+        
+        for (int i=0; i<MAXDIGITS; i++) r->bvalue->digits[i] = (char) 0;
+
+        r->bvalue->lastdigit = -1;
+        
+        while (isdigit((c=fgetc(f)))) {
+            r->bvalue->lastdigit ++;
+            r->bvalue->digits[ r->bvalue->lastdigit ] = c - '0';
+        }
+        if (c == '0') r->bvalue->lastdigit = 0;
+        
+        //fgetc(f); // skip )
+        return r;
+    } else if (c == 'C') {
+        printf("COMPLEX\n");
+    }
+    return True;
+}
+
 static Obj *read_expr(void *root, FILE *f) {
     for (;;) {
         int c = fgetc(f);
@@ -611,6 +662,8 @@ static Obj *read_expr(void *root, FILE *f) {
             return read_string(root, f);
         if (c == '\'')
             return read_quote(root, f);
+        if (c == '#')
+            return read_special_num(root, f);
         if (isdigit(c)) {
             return make_num(root,read_number(c - '0', f));
         }
@@ -620,6 +673,17 @@ static Obj *read_expr(void *root, FILE *f) {
             return read_symbol(root, c, f);
         error("Don't know how to handle %c", c);
     }
+}
+
+void print_bignum(bignum *n) {
+    int i;
+
+    printf("#B(");
+    if (n->signbit == MINUS) printf("- ");
+    for (i=0;i<=n->lastdigit; i++)
+        printf("%c",'0'+ n->digits[i]);
+
+    printf(")\n");
 }
 
 // Prints the given object.
@@ -640,6 +704,9 @@ static void print(Obj *obj) {
             obj = obj->cdr;
         }
         printf(")");
+        return;
+    case TBIGN:
+        print_bignum(obj->bvalue);
         return;
 
 #define CASE(type, ...)                         \
@@ -784,6 +851,7 @@ static Obj *eval(void *root, Obj **env, Obj **obj) {
     switch ((*obj)->type) {
     case TLONG:
     case TDOUBLE:
+    case TBIGN:
     case TSTRING:
     case TPRIMITIVE:
     case TFUNCTION:

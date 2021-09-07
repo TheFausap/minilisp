@@ -24,6 +24,7 @@
 
 /* Begin PBXFileReference section */
 		4271B57C26E73549001604F8 /* README.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = SOURCE_ROOT; };
+		4271B57E26E78AF5001604F8 /* minilisp.profdata */ = {isa = PBXFileReference; lastKnownFileType = file; path = minilisp.profdata; sourceTree = "<group>"; };
 		42B9EAD826E5D4B200BE8A33 /* minilisp */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = minilisp; sourceTree = BUILT_PRODUCTS_DIR; };
 		42B9EADB26E5D4B200BE8A33 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -39,11 +40,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		4271B57D26E78AF5001604F8 /* OptimizationProfiles */ = {
+			isa = PBXGroup;
+			children = (
+				4271B57E26E78AF5001604F8 /* minilisp.profdata */,
+			);
+			path = OptimizationProfiles;
+			sourceTree = "<group>";
+		};
 		42B9EACF26E5D4B100BE8A33 = {
 			isa = PBXGroup;
 			children = (
 				42B9EADA26E5D4B200BE8A33 /* minilisp */,
 				42B9EAD926E5D4B200BE8A33 /* Products */,
+				4271B57D26E78AF5001604F8 /* OptimizationProfiles */,
 			);
 			sourceTree = "<group>";
 		};
@@ -234,6 +244,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 11.3;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -241,6 +252,7 @@
 		42B9EAE026E5D4B200BE8A33 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_USE_OPTIMIZATION_PROFILE = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 47VS4676CV;
@@ -252,6 +264,7 @@
 		42B9EAE126E5D4B200BE8A33 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_USE_OPTIMIZATION_PROFILE = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 47VS4676CV;
