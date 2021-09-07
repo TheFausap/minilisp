@@ -585,6 +585,7 @@ static Obj *read_string(void *root, FILE *f) {
         buf[len++] = fgetc(f);
     }
     buf[len] = '\0';
+    fgetc(f);  // Eat the closing double quote
     return make_string(root, buf);
 }
 
@@ -1124,13 +1125,16 @@ static Obj *load_file(void *root, Obj **env, Obj **list) {
     // Load file
     FILE *f;
     char c;
-    char *fname = NULL;
+    char *fname;
     DEFINE1(expr);
     
     if (length(*list) < 1)
         error("Malformed load");
     
-    strcpy(fname, (*list)->str);
+    Obj *values = eval_list(root, env, list);
+    Obj *x = values->car;
+    fname = malloc(strlen(x->str));
+    strcpy(fname, x->str);
     f = fopen(fname,"r");
     if (f == NULL) return Nil;
     while ((c=fgetc(f)) != EOF) {
@@ -1142,7 +1146,8 @@ static Obj *load_file(void *root, Obj **env, Obj **list) {
             error("Stray close parenthesis");
         if (*expr == Dot)
             error("Stray dot");
-        eval(root, env, expr);
+        print(eval(root, env, expr));
+        printf("\n");
     }
     printf("%s loaded.\n",fname);
     fclose(f);
