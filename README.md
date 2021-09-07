@@ -9,3 +9,4 @@ I added
 - automatic standard library loading at startup
 - multiplication and division operations (for integer and double)
 - extended addiction and subtraction operations to floating point
+- string support

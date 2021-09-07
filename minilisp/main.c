@@ -1120,17 +1120,17 @@ static Obj *prim_eq(void *root, Obj **env, Obj **list) {
     return values->car == values->cdr->car ? True : Nil;
 }
 
-static Obj *load_file(void *root, Obj **env, Obj *list) {
+static Obj *load_file(void *root, Obj **env, Obj **list) {
     // Load file
     FILE *f;
     char c;
     char *fname = NULL;
     DEFINE1(expr);
     
-    if (length(list) < 1)
+    if (length(*list) < 1)
         error("Malformed load");
     
-    strcpy(fname, list->str);
+    strcpy(fname, (*list)->str);
     f = fopen(fname,"r");
     if (f == NULL) return Nil;
     while ((c=fgetc(f)) != EOF) {
@@ -1241,6 +1241,7 @@ int main(int argc, char **argv) {
     
     // The main loop
     for (;;) {
+        printf("?> ");
         *expr = read_expr(root, stdin);
         if (!*expr)
             return 0;
