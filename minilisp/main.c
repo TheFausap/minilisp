@@ -1179,24 +1179,55 @@ static Obj *prim_plus(void *root, Obj **env, Obj **list) {
 static Obj *prim_minus(void *root, Obj **env, Obj **list) {
     Obj *args = eval_list(root, env, list);
     int doublesub = 0;
-    double dr;
+    int longsub = 0;
+    int bignumsub = 0;
+    double dr = 0.0;
+    bignum c,d,e;
+    
     for (Obj *p = args; p != Nil; p = p->cdr) {
-        if ((p->car->type != TLONG) && (p->car->type != TDOUBLE))
+        if ((p->car->type != TLONG) &&
+            (p->car->type != TDOUBLE) &&
+            (p->car->type != TBIGN))
             error("- takes only numbers");
         if (p->car->type == TDOUBLE) doublesub = 1;
     }
+    
     if (args->cdr == Nil)
         return ((doublesub) ? make_double(root, -args->car->dvalue) :
                 make_long(root, -args->car->value));
+    
     if (args->car->type == TDOUBLE) {
         dr = args->car->dvalue;
-    } else {
+        doublesub = 1;
+    } else if (args->car->type == TLONG) {
         dr = (double)args->car->value;
+        longsub = 1;
+    } else {
+        bignumsub = 1;
+        memcpy(&e, args->car->bvalue, sizeof(bignum));
     }
     for (Obj *p = args->cdr; p != Nil; p = p->cdr)
-        dr -= (p->car->type == TDOUBLE) ? p->car->dvalue :
-        (double)p->car->value;
+        if (!bignumsub) {
+            if (p->car->type == TDOUBLE) {
+                dr -= p->car->dvalue;
+                doublesub = 1;
+            } else if (p->car->type == TLONG) {
+                dr -= p->car->value;
+                longsub = 1;
+            }
+        } else {
+            if (p->car->type == TBIGN) {
+                bignumsub = 1;
+                memcpy(&c, p->car->bvalue, sizeof(bignum));
+            } else {
+                long_to_bignum((long)dr, &c);
+            }
+            subtract_bignum(&e, &c, &d);
+            memcpy(&e, &d, sizeof(bignum));
+        }
+    
     if (doublesub) return make_double(root, dr);
+    if (bignumsub) return make_bignum(root, &d);
     return make_long(root, (long)dr);
 }
 
