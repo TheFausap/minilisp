@@ -692,8 +692,7 @@ void print_bignum(bignum *n) {
     if (n->signbit == MINUS) printf("- ");
     for (i=0;i<=n->lastdigit; i++)
         printf("%c",'0'+ n->digits[i]);
-
-    printf(")\n");
+    printf(")");
 }
 
 // Prints the given object.
@@ -896,10 +895,10 @@ static Obj *eval(void *root, Obj **env, Obj **obj) {
 //======================================================================
 // Bignums
 //======================================================================
-void int_to_bignum(int s, bignum *n)
+void long_to_bignum(long s, bignum *n)
 {
     int i;                /* counter */
-    int t;                /* int to work with */
+    long t;                /* int to work with */
 
     if (s >= 0) n->signbit = PLUS;
     else n->signbit = MINUS;
@@ -908,7 +907,7 @@ void int_to_bignum(int s, bignum *n)
 
     n->lastdigit = -1;
 
-    t = abs(s);
+    t = labs(s);
 
     while (t > 0) {
         n->lastdigit ++;
@@ -921,7 +920,7 @@ void int_to_bignum(int s, bignum *n)
 
 void initialize_bignum(bignum *n)
 {
-    int_to_bignum(0,n);
+    long_to_bignum(0,n);
 }
 
 void zero_justify(bignum *n)
@@ -1003,7 +1002,7 @@ void add_bignum(bignum *a, bignum *b, bignum *c)
 
 void subtract_bignum(bignum *a, bignum *b, bignum *c)
 {
-    int borrow;            /* has anything been borrowed? */
+    int borrow;           /* has anything been borrowed? */
     int v;                /* placeholder digit */
     int i;                /* counter */
 
@@ -1195,9 +1194,12 @@ static Obj *prim_mul(void *root, Obj **env, Obj **list) {
     double dmul = 1.0;
     int doublemul = 0;
     int bignummul = 0;
-    bignum c, d;
-    int_to_bignum(1, &c);
-    int_to_bignum(0, &d);
+    int longmul = 0;
+    long j = 1;
+    bignum c, d, e;
+    long_to_bignum(1, &c);
+    initialize_bignum(&d);
+    initialize_bignum(&e);
 
     for (Obj *args = eval_list(root, env, list); args != Nil;
          args = args->cdr) {
@@ -1206,14 +1208,23 @@ static Obj *prim_mul(void *root, Obj **env, Obj **list) {
             (args->car->type != TBIGN)) {
             error("+ takes only numbers");
         } else {
-            if (args->car->type == TLONG) {
+            if ((args->car->type == TLONG) && !(bignummul)) {
+                longmul = 1;
                 dmul *= (double)args->car->value;
-            } else if (args->car->type == TDOUBLE) {
+            } else if ((args->car->type == TDOUBLE) && !(bignummul)) {
                 doublemul = 1;
                 dmul *= args->car->dvalue;
             } else {
                 bignummul = 1;
-                multiply_bignum(&c, args->car->bvalue, &d);
+                if (args->car->type == TBIGN) {
+                    memcpy(&e, args->car->bvalue, sizeof(bignum));
+                    // long j = 1;
+                    if (longmul | doublemul) {
+                        j *= dmul;
+                        long_to_bignum(j, &c);
+                    }
+                }
+                multiply_bignum(&c, &e, &d);
                 memcpy(&c, &d, sizeof(bignum));
             }
         }
