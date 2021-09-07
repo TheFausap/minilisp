@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <math.h>
 
 static __attribute((noreturn)) void error(char *fmt, ...) {
     va_list ap;
@@ -1012,6 +1013,132 @@ static Obj *prim_lt(void *root, Obj **env, Obj **list) {
     return x->value < y->value ? True : Nil;
 }
 
+// (> <integer> | <double> <integer> | <double>)
+static Obj *prim_gt(void *root, Obj **env, Obj **list) {
+    Obj *args = eval_list(root, env, list);
+    if (length(args) != 2)
+        error("malformed >");
+    Obj *x = args->car;
+    Obj *y = args->cdr->car;
+    if ((x->type != TLONG && x->type != TDOUBLE) ||
+        (y->type != TLONG && y->type != TDOUBLE))
+        error("> takes only numbers");
+    if (x->type == TDOUBLE || y->type == TDOUBLE) {
+        double v1 = (x->type == TLONG) ? (double)x->value : x->dvalue;
+        double v2 = (y->type == TLONG) ? (double)y->value : y->dvalue;
+        return v1 > v2 ? True : Nil;
+    }
+    return x->value > y->value ? True : Nil;
+}
+
+// (sin <double>)
+static Obj *prim_sin(void *root, Obj **env, Obj **list) {
+    if (length(*list) < 1)
+        error("Malformed sin");
+    Obj *values = eval_list(root, env, list);
+    if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
+        error("sin takes only numbers");
+    double r = (values->car->type == TLONG) ? sin((double)values->car->value) : sin(values->car->dvalue);
+    return make_double(root, r);
+}
+
+// (cos <double>)
+static Obj *prim_cos(void *root, Obj **env, Obj **list) {
+    if (length(*list) < 1)
+        error("Malformed cos");
+    Obj *values = eval_list(root, env, list);
+    if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
+        error("cos takes only numbers");
+    double r = (values->car->type == TLONG) ? cos((double)values->car->value) : cos(values->car->dvalue);
+    return make_double(root, r);
+}
+
+// (tan <double>)
+static Obj *prim_tan(void *root, Obj **env, Obj **list) {
+    if (length(*list) < 1)
+        error("Malformed tan");
+    Obj *values = eval_list(root, env, list);
+    if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
+        error("tan takes only numbers");
+    double r = (values->car->type == TLONG) ? tan((double)values->car->value) : tan(values->car->dvalue);
+    return make_double(root, r);
+}
+
+// (atan <double>)
+static Obj *prim_atan(void *root, Obj **env, Obj **list) {
+    if (length(*list) < 1)
+        error("Malformed arctan");
+    Obj *values = eval_list(root, env, list);
+    if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
+        error("atan takes only numbers");
+    double r = (values->car->type == TLONG) ? atan((double)values->car->value) : atan(values->car->dvalue);
+    return make_double(root, r);
+}
+
+// (ln <double>)
+static Obj *prim_ln(void *root, Obj **env, Obj **list) {
+    if (length(*list) < 1)
+        error("Malformed ln");
+    Obj *values = eval_list(root, env, list);
+    if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
+        error("ln takes only numbers");
+    double r = (values->car->type == TLONG) ? log2((double)values->car->value) : log2(values->car->dvalue);
+    return make_double(root, r);
+}
+
+// (log10 <double>)
+static Obj *prim_log10(void *root, Obj **env, Obj **list) {
+    if (length(*list) < 1)
+        error("Malformed log10");
+    Obj *values = eval_list(root, env, list);
+    if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
+        error("log10 takes only numbers");
+    double r = (values->car->type == TLONG) ? log10((double)values->car->value) : log10(values->car->dvalue);
+    return make_double(root, r);
+}
+
+// (sqrt <double>)
+static Obj *prim_sqrt(void *root, Obj **env, Obj **list) {
+    if (length(*list) < 1)
+        error("Malformed log10");
+    Obj *values = eval_list(root, env, list);
+    if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
+        error("log10 takes only numbers");
+    double r = (values->car->type == TLONG) ? (double)values->car->value : values->car->dvalue;
+    if (r < 0)
+        error("Cannot make sqrt of negative number. NO COMPLEX");
+    return make_double(root, sqrt(r));
+}
+
+// (exp <double>)
+static Obj *prim_exp(void *root, Obj **env, Obj **list) {
+    if (length(*list) < 1)
+        error("Malformed exp");
+    Obj *values = eval_list(root, env, list);
+    if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
+        error("exp takes only numbers");
+    double r = (values->car->type == TLONG) ? exp((double)values->car->value) : exp(values->car->dvalue);
+    return make_double(root, r);
+}
+
+// (expt <integer> | <double> <integer> | <double>)
+static Obj *prim_expt(void *root, Obj **env, Obj **list) {
+    Obj *args = eval_list(root, env, list);
+    if (length(args) != 2)
+        error("malformed expt");
+    Obj *x = args->car;
+    Obj *y = args->cdr->car;
+    if ((x->type != TLONG && x->type != TDOUBLE) ||
+        (y->type != TLONG && y->type != TDOUBLE))
+        error("expt takes only numbers");
+    if (x->type == TDOUBLE || y->type == TDOUBLE) {
+        double v1 = (x->type == TLONG) ? (double)x->value : x->dvalue;
+        double v2 = (y->type == TLONG) ? (double)y->value : y->dvalue;
+        return make_double(root, pow(v1,v2));
+    }
+    return make_long(root, powf(x->value,y->value));
+}
+
 static Obj *handle_function(void *root, Obj **env,
                             Obj **list, int type) {
     if ((*list)->type != TCELL || !is_list((*list)->car)
@@ -1108,7 +1235,8 @@ static Obj *prim_num_eq(void *root, Obj **env, Obj **list) {
     Obj *values = eval_list(root, env, list);
     Obj *x = values->car;
     Obj *y = values->cdr->car;
-    if (x->type != TLONG || y->type != TLONG)
+    if ((x->type != TLONG && x->type != TDOUBLE) ||
+        (y->type != TLONG && y->type != TDOUBLE))
         error("= only takes numbers");
     return x->value == y->value ? True : Nil;
 }
@@ -1146,6 +1274,8 @@ static Obj *load_file(void *root, Obj **env, Obj **list) {
             error("Stray close parenthesis");
         if (*expr == Dot)
             error("Stray dot");
+        if (*expr == Dquote)
+            error("Stray double quote");
         print(eval(root, env, expr));
         printf("\n");
     }
@@ -1182,6 +1312,16 @@ static void define_primitives(void *root, Obj **env) {
     add_primitive(root, env, "*", prim_mul);
     add_primitive(root, env, "/", prim_div);
     add_primitive(root, env, "<", prim_lt);
+    add_primitive(root, env, ">", prim_gt);
+    add_primitive(root, env, "sin", prim_sin);
+    add_primitive(root, env, "cos", prim_cos);
+    add_primitive(root, env, "tan", prim_tan);
+    add_primitive(root, env, "atan", prim_atan);
+    add_primitive(root, env, "ln", prim_ln);
+    add_primitive(root, env, "log10", prim_log10);
+    add_primitive(root, env, "exp", prim_exp);
+    add_primitive(root, env, "expt", prim_expt);
+    add_primitive(root, env, "sqrt", prim_sqrt);
     add_primitive(root, env, "define", prim_define);
     add_primitive(root, env, "defun", prim_defun);
     add_primitive(root, env, "defmacro", prim_defmacro);
