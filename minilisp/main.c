@@ -36,6 +36,8 @@ static __attribute((noreturn)) void error(char *fmt, ...) {
 #define PLUS         1        /* positive sign bit */
 #define MINUS       -1        /* negative sign bit */
 
+#define MAX(a,b) ((a) > (b)) ? (a) : (b)
+
 typedef struct {
     char digits[MAXDIGITS];   /* represent the number */
     int signbit;              /* 1 if positive, -1 if negative */
@@ -407,6 +409,14 @@ static Obj *make_double(void *root, double value) {
     // fprintf(stderr,"MAKEDOUBLE\n");
     Obj *r = alloc(root, TDOUBLE, sizeof(double));
     r->dvalue = value;
+    return r;
+}
+
+static Obj *make_bignum(void *root, bignum *value) {
+    // fprintf(stderr,"MAKEDOUBLE\n");
+    Obj *r = alloc(root, TBIGN, sizeof(bignum));
+    r->bvalue = malloc(sizeof(bignum));
+    memcpy(r->bvalue, value, sizeof(bignum));
     return r;
 }
 
@@ -883,6 +893,175 @@ static Obj *eval(void *root, Obj **env, Obj **obj) {
         error("Bug: eval: Unknown tag type: %d", (*obj)->type);
     }
 }
+//======================================================================
+// Bignums
+//======================================================================
+void int_to_bignum(int s, bignum *n)
+{
+    int i;                /* counter */
+    int t;                /* int to work with */
+
+    if (s >= 0) n->signbit = PLUS;
+    else n->signbit = MINUS;
+
+    for (i=0; i<MAXDIGITS; i++) n->digits[i] = (char) 0;
+
+    n->lastdigit = -1;
+
+    t = abs(s);
+
+    while (t > 0) {
+        n->lastdigit ++;
+        n->digits[ n->lastdigit ] = (t % 10);
+        t = t / 10;
+    }
+
+    if (s == 0) n->lastdigit = 0;
+}
+
+void initialize_bignum(bignum *n)
+{
+    int_to_bignum(0,n);
+}
+
+void zero_justify(bignum *n)
+{
+    while ((n->lastdigit > 0) && (n->digits[ n->lastdigit ] == 0))
+        n->lastdigit --;
+
+        if ((n->lastdigit == 0) && (n->digits[0] == 0))
+        n->signbit = PLUS;    /* hack to avoid -0 */
+}
+
+
+void digit_shift(bignum *n, int d)        /* multiply n by 10^d */
+{
+    int i;                /* counter */
+
+    if ((n->lastdigit == 0) && (n->digits[0] == 0)) return;
+
+    for (i=n->lastdigit; i>=0; i--)
+        n->digits[i+d] = n->digits[i];
+
+    for (i=0; i<d; i++) n->digits[i] = 0;
+
+    n->lastdigit = n->lastdigit + d;
+}
+
+int compare_bignum(bignum *a, bignum *b)
+{
+    int i;                /* counter */
+
+    if ((a->signbit == MINUS) && (b->signbit == PLUS)) return(PLUS);
+    if ((a->signbit == PLUS) && (b->signbit == MINUS)) return(MINUS);
+
+    if (b->lastdigit > a->lastdigit) return (PLUS * a->signbit);
+    if (a->lastdigit > b->lastdigit) return (MINUS * a->signbit);
+
+    for (i = a->lastdigit; i>=0; i--) {
+        if (a->digits[i] > b->digits[i]) return(MINUS * a->signbit);
+        if (b->digits[i] > a->digits[i]) return(PLUS * a->signbit);
+    }
+
+    return(0);
+}
+
+void subtract_bignum(bignum *a, bignum *b, bignum *c);
+
+void add_bignum(bignum *a, bignum *b, bignum *c)
+{
+    int carry;            /* carry digit */
+    int i;                /* counter */
+
+    initialize_bignum(c);
+
+    if (a->signbit == b->signbit) c->signbit = a->signbit;
+    else {
+        if (a->signbit == MINUS) {
+            a->signbit = PLUS;
+            subtract_bignum(b,a,c);
+            a->signbit = MINUS;
+        } else {
+                        b->signbit = PLUS;
+                        subtract_bignum(a,b,c);
+                        b->signbit = MINUS;
+        }
+        return;
+    }
+
+    c->lastdigit = MAX(a->lastdigit,b->lastdigit)+1;
+    carry = 0;
+
+    for (i=0; i<=(c->lastdigit); i++) {
+        c->digits[i] = (char) (carry+a->digits[i]+b->digits[i]) % 10;
+        carry = (carry + a->digits[i] + b->digits[i]) / 10;
+    }
+
+    zero_justify(c);
+}
+
+
+void subtract_bignum(bignum *a, bignum *b, bignum *c)
+{
+    int borrow;            /* has anything been borrowed? */
+    int v;                /* placeholder digit */
+    int i;                /* counter */
+
+    initialize_bignum(c);
+
+    if ((a->signbit == MINUS) || (b->signbit == MINUS)) {
+                b->signbit = -1 * b->signbit;
+                add_bignum(a,b,c);
+                b->signbit = -1 * b->signbit;
+        return;
+        }
+
+    if (compare_bignum(a,b) == PLUS) {
+        subtract_bignum(b,a,c);
+        c->signbit = MINUS;
+        return;
+    }
+
+        c->lastdigit = MAX(a->lastdigit,b->lastdigit);
+        borrow = 0;
+
+        for (i=0; i<=(c->lastdigit); i++) {
+        v = (a->digits[i] - borrow - b->digits[i]);
+        if (a->digits[i] > 0)
+            borrow = 0;
+        if (v < 0) {
+            v = v + 10;
+            borrow = 1;
+        }
+
+                c->digits[i] = (char) v % 10;
+        }
+
+    zero_justify(c);
+}
+
+void multiply_bignum(bignum *a, bignum *b, bignum *c)
+{
+    bignum row;            /* represent shifted row */
+    bignum tmp;            /* placeholder bignum */
+    int i,j;            /* counters */
+
+    initialize_bignum(c);
+
+    row = *a;
+
+    for (i=0; i<=b->lastdigit; i++) {
+        for (j=1; j<=b->digits[i]; j++) {
+            add_bignum(c,&row,&tmp);
+            *c = tmp;
+        }
+        digit_shift(&row,1);
+    }
+
+    c->signbit = a->signbit * b->signbit;
+
+    zero_justify(c);
+}
 
 //======================================================================
 // Primitive functions and special forms
@@ -1015,21 +1194,32 @@ static Obj *prim_minus(void *root, Obj **env, Obj **list) {
 static Obj *prim_mul(void *root, Obj **env, Obj **list) {
     double dmul = 1.0;
     int doublemul = 0;
+    int bignummul = 0;
+    bignum c, d;
+    int_to_bignum(1, &c);
+    int_to_bignum(0, &d);
+
     for (Obj *args = eval_list(root, env, list); args != Nil;
          args = args->cdr) {
         if ((args->car->type != TLONG) &&
-            (args->car->type != TDOUBLE)) {
+            (args->car->type != TDOUBLE) &&
+            (args->car->type != TBIGN)) {
             error("+ takes only numbers");
         } else {
             if (args->car->type == TLONG) {
                 dmul *= (double)args->car->value;
-            } else {
+            } else if (args->car->type == TDOUBLE) {
                 doublemul = 1;
                 dmul *= args->car->dvalue;
+            } else {
+                bignummul = 1;
+                multiply_bignum(&c, args->car->bvalue, &d);
+                memcpy(&c, &d, sizeof(bignum));
             }
         }
     }
     if (doublemul) return make_double(root, dmul);
+    if (bignummul) return make_bignum(root, &d);
     return make_long(root, (long)dmul);
 }
 
@@ -1054,7 +1244,7 @@ static Obj *prim_div(void *root, Obj **env, Obj **list) {
     }
     for (Obj *p = args->cdr; p != Nil; p = p->cdr) {
         temp = (p->car->type == TDOUBLE) ? p->car->dvalue :
-        (double)p->car->value;
+            (double)p->car->value;
         if (temp == 0.0) error("division by zero");
         dr /= temp;
     }
