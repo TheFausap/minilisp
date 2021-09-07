@@ -28,6 +28,8 @@ static __attribute((noreturn)) void error(char *fmt, ...) {
     exit(1);
 }
 
+#define MAX_STRING 1024
+
 //======================================================================
 // Lisp objects
 //======================================================================
@@ -39,6 +41,7 @@ enum {
     TDOUBLE,
     TCELL,
     TSYMBOL,
+    TSTRING,
     TPRIMITIVE,
     TFUNCTION,
     TMACRO,
@@ -55,6 +58,7 @@ enum {
     TNIL,
     TDOT,
     TCPAREN,
+    TDQUOTE,
 };
 
 // Typedef for the primitive function
@@ -86,6 +90,8 @@ typedef struct Obj {
         };
         // Symbol
         char name[1];
+        // String
+        char str[MAX_STRING];
         // Primitive
         Primitive *fn;
         // Function or Macro
@@ -110,6 +116,7 @@ static Obj *True = &(Obj){ TTRUE };
 static Obj *Nil = &(Obj){ TNIL };
 static Obj *Dot = &(Obj){ TDOT };
 static Obj *Cparen = &(Obj){ TCPAREN };
+static Obj *Dquote = &(Obj){ TDQUOTE };
 
 // The list containing all symbols. Such data structure is traditionally
 // called the "obarray", but I avoid using it as a variable name as this
@@ -297,7 +304,8 @@ static inline Obj *forward(Obj *obj) {
 }
 
 static void *alloc_semispace() {
-    return mmap(NULL, MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    return mmap(NULL, MEMORY_SIZE, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANON, -1, 0);
 }
 
 // Copies the root objects.
@@ -561,6 +569,18 @@ static Obj *read_symbol(void *root, char c, FILE *f) {
     return intern(root, buf);
 }
 
+static Obj *read_string(void *root, char c, FILE *f) {
+    char buf[MAX_STRING];
+    int len = 0;
+    while (isalnum(peek(f)) || strchr(symbol_chars, peek(f))) {
+        if (MAX_STRING < len)
+            error("String too long");
+        buf[len++] = fgetc(f);
+    }
+    buf[len] = '\0';
+    return intern(root, buf);
+}
+
 static Obj *read_expr(void *root, FILE *f) {
     for (;;) {
         int c = fgetc(f);
@@ -578,6 +598,8 @@ static Obj *read_expr(void *root, FILE *f) {
             return Cparen;
         if (c == '.')
             return Dot;
+        if (c == '"')
+            return Dquote;
         if (c == '\'')
             return read_quote(root, f);
         if (isdigit(c)) {
@@ -1089,6 +1111,34 @@ static Obj *prim_eq(void *root, Obj **env, Obj **list) {
     return values->car == values->cdr->car ? True : Nil;
 }
 
+static Obj *load_file(void *root, Obj **env, Obj **list) {
+    // Load file
+    FILE *f;
+    char c;
+    char *fname;
+    DEFINE1(expr);
+    
+    if (length(*list) < 1)
+        error("Malformed load");
+    
+    f = fopen(fname,"r");
+    if (f == NULL) return Nil;
+    while ((c=fgetc(f)) != EOF) {
+        ungetc(c,f);
+        *expr = read_expr(root, f);
+        if (!*expr)
+            continue;
+        if (*expr == Cparen)
+            error("Stray close parenthesis");
+        if (*expr == Dot)
+            error("Stray dot");
+        eval(root, env, expr);
+    }
+    printf("%s loaded.\n",fname);
+    fclose(f);
+    return True;
+}
+
 static void add_primitive(void *root, Obj **env, char *name,
                           Primitive *fn) {
     DEFINE2(sym, prim);
@@ -1126,6 +1176,7 @@ static void define_primitives(void *root, Obj **env) {
     add_primitive(root, env, "=", prim_num_eq);
     add_primitive(root, env, "eq", prim_eq);
     add_primitive(root, env, "println", prim_println);
+    add_primitive(root, env, "load", load_file);
 }
 
 //======================================================================
