@@ -416,6 +416,12 @@ static Obj *make_symbol(void *root, char *name) {
     return sym;
 }
 
+static Obj *make_string(void *root, char *name) {
+    Obj *s = alloc(root, TSTRING, strlen(name) + 1);
+    strcpy(s->str, name);
+    return s;
+}
+
 static Obj *make_primitive(void *root, Primitive *fn) {
     Obj *r = alloc(root, TPRIMITIVE, sizeof(Primitive *));
     r->fn = fn;
@@ -569,16 +575,17 @@ static Obj *read_symbol(void *root, char c, FILE *f) {
     return intern(root, buf);
 }
 
-static Obj *read_string(void *root, char c, FILE *f) {
+static Obj *read_string(void *root, FILE *f) {
+    // Starting double quote already read in.
     char buf[MAX_STRING];
     int len = 0;
-    while (isalnum(peek(f)) || strchr(symbol_chars, peek(f))) {
-        if (MAX_STRING < len)
+    while (peek(f) != '"') {
+        if (MAX_STRING <= len)
             error("String too long");
         buf[len++] = fgetc(f);
     }
     buf[len] = '\0';
-    return intern(root, buf);
+    return make_string(root, buf);
 }
 
 static Obj *read_expr(void *root, FILE *f) {
@@ -599,7 +606,7 @@ static Obj *read_expr(void *root, FILE *f) {
         if (c == '.')
             return Dot;
         if (c == '"')
-            return Dquote;
+            return read_string(root, f);
         if (c == '\'')
             return read_quote(root, f);
         if (isdigit(c)) {
@@ -641,6 +648,7 @@ static void print(Obj *obj) {
     CASE(TLONG, "%ld", obj->value);
     CASE(TDOUBLE, "%lf", obj->dvalue);
     CASE(TSYMBOL, "%s", obj->name);
+    CASE(TSTRING, "%s", obj->str);
     CASE(TPRIMITIVE, "<primitive>");
     CASE(TFUNCTION, "<function>");
     CASE(TMACRO, "<macro>");
@@ -775,6 +783,7 @@ static Obj *eval(void *root, Obj **env, Obj **obj) {
     switch ((*obj)->type) {
     case TLONG:
     case TDOUBLE:
+    case TSTRING:
     case TPRIMITIVE:
     case TFUNCTION:
     case TTRUE:
@@ -1111,16 +1120,17 @@ static Obj *prim_eq(void *root, Obj **env, Obj **list) {
     return values->car == values->cdr->car ? True : Nil;
 }
 
-static Obj *load_file(void *root, Obj **env, Obj **list) {
+static Obj *load_file(void *root, Obj **env, Obj *list) {
     // Load file
     FILE *f;
     char c;
-    char *fname;
+    char *fname = NULL;
     DEFINE1(expr);
     
-    if (length(*list) < 1)
+    if (length(list) < 1)
         error("Malformed load");
     
+    strcpy(fname, list->str);
     f = fopen(fname,"r");
     if (f == NULL) return Nil;
     while ((c=fgetc(f)) != EOF) {
@@ -1221,6 +1231,8 @@ int main(int argc, char **argv) {
                 error("Stray close parenthesis");
             if (*expr == Dot)
                 error("Stray dot");
+            if (*expr == Dquote)
+                error("Stray double quote");
             eval(root, env, expr);
         }
         printf("Library loaded.\n");
@@ -1236,6 +1248,8 @@ int main(int argc, char **argv) {
             error("Stray close parenthesis");
         if (*expr == Dot)
             error("Stray dot");
+        if (*expr == Dquote)
+            error("Stray double quote");
         print(eval(root, env, expr));
         printf("\n");
     }
