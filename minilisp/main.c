@@ -615,8 +615,7 @@ static Obj *read_expr(void *root, FILE *f) {
             return make_num(root,read_number(c - '0', f));
         }
         if (c == '-' && isdigit(peek(f)))
-            return (isdouble==1) ? make_double(root, -read_number(c - '0', f)) :
-                make_long(root, (long) -read_number(c - '0', f));
+            return make_num(root, -1.0 * read_number((c = fgetc(f)) - '0', f));
         if (isalpha(c) || strchr(symbol_chars, c))
             return read_symbol(root, c, f);
         error("Don't know how to handle %c", c);
