@@ -1218,6 +1218,8 @@ static Obj *prim_plus(void *root, Obj **env, Obj **list) {
     int doubleadd = 0;
     int longadd = 0;
     int bigadd = 0;
+    bignum c,d,e;
+    
     for (Obj *args = eval_list(root, env, list);
          args != Nil; args = args->cdr) {
         if ((args->car->type != TLONG) && (args->car->type != TDOUBLE)
@@ -1230,10 +1232,26 @@ static Obj *prim_plus(void *root, Obj **env, Obj **list) {
             } else if (args->car->type == TDOUBLE && !bigadd) {
                 doubleadd = 1;
                 dsum += args->car->dvalue;
+            } else {
+                bigadd = 1;
+                if (args->car->type == TBIGN) {
+                    memcpy(&e, args->car->bvalue, sizeof(bignum));
+                } else {
+                    if (longadd | doubleadd) {
+                        long_to_bignum(dsum, &c);
+                        add_bignum(&c, &e, &d);
+                        memcpy(&c, &d, sizeof(bignum));
+                    }
+                    long zz = (args->car->type == TLONG) ? args->car->value : (long)args->car->dvalue;
+                    long_to_bignum(zz, &c);
+                }
+                add_bignum(&c, &e, &d);
+                memcpy(&c, &d, sizeof(bignum));
             }
         }
     }
     if (doubleadd) return make_double(root, dsum);
+    if (bigadd) return make_bignum(root, &d);
     return make_long(root, (long)dsum);
 }
 
