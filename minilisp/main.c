@@ -140,12 +140,15 @@ static Obj *Dquote = &(Obj){ TDQUOTE };
 // is not an array but a list.
 static Obj *Symbols;
 
+void long_to_bignum(long s, bignum *n);
+void initialize_bignum(bignum *n);
+
 //======================================================================
 // Memory management
 //======================================================================
 
 // The size of the heap in byte
-#define MEMORY_SIZE 65536
+#define MEMORY_SIZE 1024*1024
 
 // The pointer pointing to the beginning of the current heap
 static void *memory;
@@ -274,6 +277,7 @@ static Obj *alloc(void *root, int type, size_t size) {
     obj->type = type;
     obj->size = size;
     mem_nused += size;
+    //printf("Allocated memory: %ld\n", mem_nused);
     return obj;
 }
 
@@ -358,6 +362,8 @@ static void gc(void *root) {
         switch (scan1->type) {
         case TLONG:
         case TDOUBLE:
+        case TBIGN:
+        case TSTRING:
         case TSYMBOL:
         case TPRIMITIVE:
             // Any of the above types does not contain a pointer to a
@@ -378,7 +384,7 @@ static void gc(void *root) {
             scan1->up = forward(scan1->up);
             break;
         default:
-            error("Bug: copy: unknown type %d", scan1->type);
+            error("*** GC Bug: copy: unknown type %d", scan1->type);
         }
         scan1 = (Obj *)((uint8_t *)scan1 + scan1->size);
     }
@@ -387,10 +393,9 @@ static void gc(void *root) {
     munmap(from_space, MEMORY_SIZE);
     size_t old_nused = mem_nused;
     mem_nused = (size_t)((uint8_t *)scan1 - (uint8_t *)memory);
-    if (debug_gc)
-        fprintf(stderr,
-         "GC: %zu bytes out of %zu bytes copied.\n",
-            mem_nused, old_nused);
+    fprintf(stderr,
+        "GC: %zu bytes out of %zu bytes copied.\n",
+        mem_nused, old_nused);
     gc_running = false;
 }
 
@@ -413,9 +418,10 @@ static Obj *make_double(void *root, double value) {
 }
 
 static Obj *make_bignum(void *root, bignum *value) {
-    // fprintf(stderr,"MAKEDOUBLE\n");
+    //gc(root);
     Obj *r = alloc(root, TBIGN, sizeof(bignum));
     r->bvalue = malloc(sizeof(bignum));
+    initialize_bignum(r->bvalue);
     memcpy(r->bvalue, value, sizeof(bignum));
     return r;
 }
@@ -619,40 +625,37 @@ static Obj *read_special_num(void *root, FILE *f) {
     char dg[MAXDIGITS];
     int j = -1;
     long z;
-    Obj *r;
+    bignum r;
     
     if (c == 'B') {
         //printf("BIGNUM\n");
-        r = alloc(root, TBIGN, sizeof(bignum));
-        r->type = TBIGN;
-        r->bvalue = malloc(sizeof(bignum));
-        c = fgetc(f);  // skip (
-        c = fgetc(f);  // check for sign
+        c = fgetc(f);                   // skip (
+        c = fgetc(f);                   // check for sign
         
         if (c == '-') {
-            r->bvalue->signbit = MINUS;
+            r.signbit = MINUS;
         } else {
-            r->bvalue->signbit = PLUS;
-            ungetc(c,f); // there is no +
+            r.signbit = PLUS;
+            ungetc(c,f);                // there is no +
         }
         
-        for (int i=0; i<MAXDIGITS; i++) r->bvalue->digits[i] = (char) 0;
+        for (int i=0; i<MAXDIGITS; i++) r.digits[i] = (char) 0;
 
-        r->bvalue->lastdigit = -1;
+        r.lastdigit = -1;
         
         while (isdigit((c=fgetc(f)))) {
             dg[++j] = c - '0';
         }
         
         for (z=j;z>=0;z--) {
-            r->bvalue->lastdigit ++;
-            r->bvalue->digits[ r->bvalue->lastdigit ] = dg[z];
+            r.lastdigit ++;
+            r.digits[ r.lastdigit ] = dg[z];
         }
     
-        if (c == '0') r->bvalue->lastdigit = 0;
+        if (c == '0') r.lastdigit = 0;
         
         //fgetc(f); // skip )
-        return r;
+        return make_bignum(root, &r);
     } else if (c == 'C') {
         printf("COMPLEX\n");
     }
@@ -905,7 +908,7 @@ static Obj *eval(void *root, Obj **env, Obj **obj) {
 //======================================================================
 void long_to_bignum(long s, bignum *n)
 {
-    int i;                /* counter */
+    int i;                 /* counter */
     long t;                /* int to work with */
 
     if (s >= 0) n->signbit = PLUS;
@@ -1071,6 +1074,8 @@ void multiply_bignum(bignum *a, bignum *b, bignum *c)
     c->signbit = a->signbit * b->signbit;
 
     zero_justify(c);
+    //free(&row);
+    //free(&tmp);
 }
 
 //======================================================================
@@ -1158,14 +1163,18 @@ static Obj *prim_gensym(void *root, Obj **env, Obj **list) {
 static Obj *prim_plus(void *root, Obj **env, Obj **list) {
     double dsum = 0;
     int doubleadd = 0;
+    int longadd = 0;
+    int bigadd = 0;
     for (Obj *args = eval_list(root, env, list);
          args != Nil; args = args->cdr) {
-        if ((args->car->type != TLONG) && (args->car->type != TDOUBLE)) {
+        if ((args->car->type != TLONG) && (args->car->type != TDOUBLE)
+            && (args->car->type != TBIGN)) {
             error("+ takes only numbers");
         } else {
-            if (args->car->type == TLONG) {
+            if (args->car->type == TLONG && !bigadd) {
                 dsum += (double)args->car->value;
-            } else {
+                longadd = 1;
+            } else if (args->car->type == TDOUBLE && !bigadd) {
                 doubleadd = 1;
                 dsum += args->car->dvalue;
             }
@@ -1206,7 +1215,7 @@ static Obj *prim_minus(void *root, Obj **env, Obj **list) {
         bignumsub = 1;
         memcpy(&e, args->car->bvalue, sizeof(bignum));
     }
-    for (Obj *p = args->cdr; p != Nil; p = p->cdr)
+    for (Obj *p = args->cdr; p != Nil; p = p->cdr) {
         if (!bignumsub) {
             if (p->car->type == TDOUBLE) {
                 dr -= p->car->dvalue;
@@ -1216,16 +1225,22 @@ static Obj *prim_minus(void *root, Obj **env, Obj **list) {
                 longsub = 1;
             }
         } else {
+            bignumsub = 1;
             if (p->car->type == TBIGN) {
-                bignumsub = 1;
                 memcpy(&c, p->car->bvalue, sizeof(bignum));
             } else {
-                long_to_bignum((long)dr, &c);
+                if (doublesub | longsub) {
+                    long_to_bignum((long)dr, &c);
+                    subtract_bignum(&e, &c, &d);
+                    memcpy(&e, &d, sizeof(bignum));
+                }
+                long zz = (p->car->type == TLONG) ? p->car->value : (long)p->car->dvalue;
+                long_to_bignum(zz, &c);
             }
             subtract_bignum(&e, &c, &d);
             memcpy(&e, &d, sizeof(bignum));
         }
-    
+    }
     if (doublesub) return make_double(root, dr);
     if (bignumsub) return make_bignum(root, &d);
     return make_long(root, (long)dr);
@@ -1260,17 +1275,22 @@ static Obj *prim_mul(void *root, Obj **env, Obj **list) {
                 bignummul = 1;
                 if (args->car->type == TBIGN) {
                     memcpy(&e, args->car->bvalue, sizeof(bignum));
-                    // long j = 1;
+                } else {
                     if (longmul | doublemul) {
-                        j *= dmul;
-                        long_to_bignum(j, &c);
+                        long_to_bignum(dmul, &c);
+                        multiply_bignum(&c, &e, &d);
+                        memcpy(&c, &d, sizeof(bignum));
                     }
+                    long zz = (args->car->type == TLONG) ? args->car->value : (long)args->car->dvalue;
+                    long_to_bignum(zz, &c);
                 }
                 multiply_bignum(&c, &e, &d);
                 memcpy(&c, &d, sizeof(bignum));
             }
         }
     }
+    //free(&c);
+    //free(&e);
     if (doublemul) return make_double(root, dmul);
     if (bignummul) return make_bignum(root, &d);
     return make_long(root, (long)dmul);
@@ -1307,18 +1327,38 @@ static Obj *prim_div(void *root, Obj **env, Obj **list) {
 
 // (< <integer> | <double> <integer> | <double>)
 static Obj *prim_lt(void *root, Obj **env, Obj **list) {
+    bignum b;
+    
     Obj *args = eval_list(root, env, list);
     if (length(args) != 2)
         error("malformed <");
     Obj *x = args->car;
     Obj *y = args->cdr->car;
-    if ((x->type != TLONG && x->type != TDOUBLE) ||
-        (y->type != TLONG && y->type != TDOUBLE))
+    if ((x->type != TLONG && x->type != TDOUBLE && x->type != TBIGN) ||
+        (y->type != TLONG && y->type != TDOUBLE && y->type != TBIGN))
         error("< takes only numbers");
-    if (x->type == TDOUBLE || y->type == TDOUBLE) {
-        double v1 = (x->type == TLONG) ? (double)x->value : x->dvalue;
-        double v2 = (y->type == TLONG) ? (double)y->value : y->dvalue;
-        return v1 < v2 ? True : Nil;
+    if (x->type == TDOUBLE && y->type == TDOUBLE) {
+        return x->dvalue < y->dvalue ? True : Nil;
+    } else if (x->type == TBIGN && y->type == TBIGN) {
+        if (compare_bignum(x->bvalue, y->bvalue) == PLUS) {
+            return True;
+        } else {
+            return Nil;
+        }
+    } else if (x->type == TBIGN && y->type == TLONG) {
+        long_to_bignum(y->value, &b);
+        if (compare_bignum(x->bvalue, &b) == PLUS) {
+            return True;
+        } else {
+            return Nil;
+        }
+    } else if (x->type == TLONG && y->type == TBIGN) {
+        long_to_bignum(x->value, &b);
+        if (compare_bignum(&b, y->bvalue) == PLUS) {
+            return True;
+        } else {
+            return Nil;
+        }
     }
     return x->value < y->value ? True : Nil;
 }
