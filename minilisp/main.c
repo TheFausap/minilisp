@@ -1131,6 +1131,45 @@ void multiply_bignum(bignum *a, bignum *b, bignum *c)
     //free(&tmp);
 }
 
+void divide_bignum(bignum *a, bignum *b, bignum *c)
+{
+    bignum row;                     /* represent shifted row */
+    bignum tmp;                     /* placeholder bignum */
+    int asign, bsign;               /* temporary signs */
+    int i;                          /* counters */
+
+    initialize_bignum(c);
+
+    c->signbit = a->signbit * b->signbit;
+
+    asign = a->signbit;
+    bsign = b->signbit;
+
+    a->signbit = PLUS;
+        b->signbit = PLUS;
+
+    initialize_bignum(&row);
+    initialize_bignum(&tmp);
+
+    c->lastdigit = a->lastdigit;
+
+    for (i=a->lastdigit; i>=0; i--) {
+        digit_shift(&row,1);
+        row.digits[0] = a->digits[i];
+        c->digits[i] = 0;
+        while (compare_bignum(&row,b) != PLUS) {
+            c->digits[i] ++;
+            subtract_bignum(&row,b,&tmp);
+            row = tmp;
+        }
+    }
+
+    zero_justify(c);
+
+    a->signbit = asign;
+    b->signbit = bsign;
+}
+
 //======================================================================
 // Primitive functions and special forms
 //======================================================================
@@ -1219,6 +1258,9 @@ static Obj *prim_plus(void *root, Obj **env, Obj **list) {
     int longadd = 0;
     int bigadd = 0;
     bignum c,d,e;
+    initialize_bignum(&c);
+    initialize_bignum(&d);
+    initialize_bignum(&e);
     
     for (Obj *args = eval_list(root, env, list);
          args != Nil; args = args->cdr) {
@@ -1269,7 +1311,7 @@ static Obj *prim_minus(void *root, Obj **env, Obj **list) {
             (p->car->type != TDOUBLE) &&
             (p->car->type != TBIGN))
             return error("- takes only numbers");
-        if (p->car->type == TDOUBLE) doublesub = 1;
+        //if (p->car->type == TDOUBLE) doublesub = 1;
     }
     
     if (args->cdr == Nil)
@@ -1286,6 +1328,7 @@ static Obj *prim_minus(void *root, Obj **env, Obj **list) {
         bignumsub = 1;
         memcpy(&e, args->car->bvalue, sizeof(bignum));
     }
+    
     for (Obj *p = args->cdr; p != Nil; p = p->cdr) {
         if (!bignumsub) {
             if (p->car->type == TDOUBLE) {
@@ -1294,6 +1337,10 @@ static Obj *prim_minus(void *root, Obj **env, Obj **list) {
             } else if (p->car->type == TLONG) {
                 dr -= p->car->value;
                 longsub = 1;
+            } else {
+                long_to_bignum(dr, &e);
+                subtract_bignum(&e, p->car->bvalue, &d);
+                bignumsub = 1;
             }
         } else {
             bignumsub = 1;
@@ -1333,7 +1380,7 @@ static Obj *prim_mul(void *root, Obj **env, Obj **list) {
         if ((args->car->type != TLONG) &&
             (args->car->type != TDOUBLE) &&
             (args->car->type != TBIGN)) {
-            return error("+ takes only numbers");
+            return error("* takes only numbers");
         } else {
             if ((args->car->type == TLONG) && !(bignummul)) {
                 longmul = 1;
@@ -1370,28 +1417,70 @@ static Obj *prim_mul(void *root, Obj **env, Obj **list) {
 static Obj *prim_div(void *root, Obj **env, Obj **list) {
     Obj *args = eval_list(root, env, list);
     int doublediv = 0;
-    double dr;
-    double temp;
+    int longdiv = 0;
+    int bigdiv = 0;
+    double dr = 0.0;
+    bignum bzero;
+    bignum c,d,e;
+    initialize_bignum(&bzero);
+    
     for (Obj *p = args; p != Nil; p = p->cdr) {
-        if ((p->car->type != TLONG) && (p->car->type != TDOUBLE))
-            return error("- takes only numbers");
-        if (p->car->type == TDOUBLE) doublediv = 1;
+        if ((p->car->type != TLONG) && (p->car->type != TDOUBLE) &&
+            (p->car->type != TBIGN))
+            return error("/ takes only numbers");
+        //if (p->car->type == TDOUBLE) doublediv = 1;
     }
+    
     if (args->cdr == Nil)
         return ((doublediv) ? make_double(root, 1.0 / args->car->dvalue) :
                 make_long(root, 1 / args->car->value));
+    
     if (args->car->type == TDOUBLE) {
         dr = args->car->dvalue;
-    } else {
+        doublediv = 1;
+    } else if (args->car->type == TLONG) {
         dr = (double)args->car->value;
+        longdiv = 1;
+    } else {
+        bigdiv = 1;
+        memcpy(&e, args->car->bvalue, sizeof(bignum));
     }
+    
     for (Obj *p = args->cdr; p != Nil; p = p->cdr) {
-        temp = (p->car->type == TDOUBLE) ? p->car->dvalue :
-            (double)p->car->value;
-        if (temp == 0.0) return error("division by zero");
-        dr /= temp;
+        if (!bigdiv) {
+            if (p->car->type == TDOUBLE) {
+                if (p->car->dvalue == 0.0) return error("division by zero");
+                dr /= p->car->dvalue;
+                doublediv = 1;
+            } else if (p->car->type == TLONG) {
+                if (p->car->value == 0.0) return error("division by zero");
+                dr /= p->car->value;
+                longdiv = 1;
+            } else {
+                if (compare_bignum(p->car->bvalue, &bzero) == 0) return error("division by zero");
+                long_to_bignum(dr, &e);
+                divide_bignum(&e, p->car->bvalue, &d);
+                bigdiv = 1;
+            }
+        } else {
+            bigdiv = 1;
+            if (p->car->type == TBIGN) {
+                memcpy(&c, p->car->bvalue, sizeof(bignum));
+            } else {
+                if (doublediv | longdiv) {
+                    long_to_bignum((long)dr, &c);
+                    divide_bignum(&e, &c, &d);
+                    memcpy(&e, &d, sizeof(bignum));
+                }
+                long zz = (p->car->type == TLONG) ? p->car->value : (long)p->car->dvalue;
+                long_to_bignum(zz, &c);
+            }
+            divide_bignum(&e, &c, &d);
+            memcpy(&e, &d, sizeof(bignum));
+        }
     }
     if (doublediv) return make_double(root, dr);
+    if (bigdiv) return make_bignum(root, &d);
     return make_long(root, (long)dr);
 }
 
