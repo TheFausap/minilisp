@@ -19,6 +19,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <math.h>
+#include <complex.h>
 
 #define MAX_STRING   1024
 
@@ -45,6 +46,7 @@ enum {
     TLONG = 1,
     TDOUBLE,
     TBIGN,
+    TCMPX,
     TCELL,
     TSYMBOL,
     TSTRING,
@@ -91,6 +93,8 @@ typedef struct Obj {
         double dvalue;
         // Bignum
         bignum *bvalue;
+        // Complex
+        complex double cvalue;
         // Cell
         struct {
             struct Obj *car;
@@ -367,6 +371,7 @@ static void gc(void *root) {
         case TLONG:
         case TDOUBLE:
         case TBIGN:
+        case TCMPX:
         case TSTRING:
         case TSYMBOL:
         case TPRIMITIVE:
@@ -428,6 +433,13 @@ static Obj *make_bignum(void *root, bignum *value) {
     r->bvalue = malloc(sizeof(bignum));
     initialize_bignum(r->bvalue);
     memcpy(r->bvalue, value, sizeof(bignum));
+    return r;
+}
+
+static Obj *make_complex(void *root, complex double value) {
+    // fprintf(stderr,"MAKEDOUBLE\n");
+    Obj *r = alloc(root, TCMPX, sizeof(complex double));
+    r->cvalue = value;
     return r;
 }
 
@@ -628,9 +640,13 @@ static Obj *read_string(void *root, FILE *f) {
 static Obj *read_special_num(void *root, FILE *f) {
     char c = fgetc(f); // special number indicator
     char dg[MAXDIGITS];
+    double re = 0.0;
+    double im = 0.0;
     int j = -1;
     long z;
     bignum r;
+    complex double z1;
+    int sign = 1;
     
     if (c == 'B') {
         //printf("BIGNUM\n");
@@ -662,9 +678,37 @@ static Obj *read_special_num(void *root, FILE *f) {
         //fgetc(f); // skip )
         return make_bignum(root, &r);
     } else if (c == 'C') {
-        printf("COMPLEX\n");
+        //printf("COMPLEX\n");
+        c = fgetc(f);                   // skip (
+        c = fgetc(f);                   // check for sign
+        
+        // *** REAL PART ***
+        if (c == '-') {
+            sign = MINUS;
+        } else {
+            sign = PLUS;
+            ungetc(c,f);                // there is no +
+        }
+        while (isdigit((c=fgetc(f)))) {
+            re = read_number(c, f);
+        }
+        re *= sign;
+        
+        // *** IMAGINARY PART ***
+        if (c == '-') {
+            sign = MINUS;
+        } else {
+            sign = PLUS;
+            ungetc(c,f);                // there is no +
+        }
+        while (isdigit((c=fgetc(f)))) {
+            im = read_number(c, f);
+        }
+        im *= sign;
+        z1 = CMPLX(re,im);
+        return make_complex(root, z1);
     }
-    return True;
+    return Nil;
 }
 
 static Obj *read_expr(void *root, FILE *f) {
