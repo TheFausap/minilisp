@@ -1654,6 +1654,10 @@ static Obj *load_file(void *root, Obj **env, Obj **list) {
     return True;
 }
 
+static Obj *prim_exit(void *root, Obj **env, Obj **list) {
+    exit(0);
+}
+
 static void add_primitive(void *root, Obj **env, char *name,
                           Primitive *fn) {
     DEFINE2(sym, prim);
@@ -1702,6 +1706,7 @@ static void define_primitives(void *root, Obj **env) {
     add_primitive(root, env, "eq", prim_eq);
     add_primitive(root, env, "println", prim_println);
     add_primitive(root, env, "load", load_file);
+    add_primitive(root, env, "exit", prim_exit);
 }
 
 //======================================================================
