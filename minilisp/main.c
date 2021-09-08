@@ -19,6 +19,8 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <math.h>
+#include <float.h>
+#include <limits.h>
 #include <complex.h>
 
 #define MAX_STRING   1024
@@ -29,6 +31,8 @@
 #define MINUS       -1        /* negative sign bit */
 
 #define MAX(a,b) ((a) > (b)) ? (a) : (b)
+
+#define CHKOVERPOW(a,b) ((a) > 0 && (b) > 0) && (pow((a),(b)) < 0)
 
 typedef struct {
     char digits[MAXDIGITS];   /* represent the number */
@@ -147,6 +151,15 @@ static Obj *error(char *fmt, ...) {
     va_end(ap);
     //exit(1);
     return Nil;
+}
+
+int checkoverflow(long a, long b) {
+    long r;
+    if (a > 0 && b > 0) {
+        r = powf(a,b);
+        if (r < 0) return 1;
+    }
+    return 0;
 }
 
 //======================================================================
@@ -1546,7 +1559,7 @@ static Obj *prim_sin(void *root, Obj **env, Obj **list) {
         return error("Malformed sin");
     Obj *values = eval_list(root, env, list);
     if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
-        return error("sin takes only numbers");
+        return error("sin takes only LONG or DOUBLE");
     double r = (values->car->type == TLONG) ? sin((double)values->car->value) : sin(values->car->dvalue);
     return make_double(root, r);
 }
@@ -1557,7 +1570,7 @@ static Obj *prim_cos(void *root, Obj **env, Obj **list) {
         return error("Malformed cos");
     Obj *values = eval_list(root, env, list);
     if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
-        return error("cos takes only numbers");
+        return error("cos takes only LONG or DOUBLE");
     double r = (values->car->type == TLONG) ? cos((double)values->car->value) : cos(values->car->dvalue);
     return make_double(root, r);
 }
@@ -1568,7 +1581,7 @@ static Obj *prim_tan(void *root, Obj **env, Obj **list) {
         return error("Malformed tan");
     Obj *values = eval_list(root, env, list);
     if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
-        return error("tan takes only numbers");
+        return error("tan takes only LONG or DOUBLE");
     double r = (values->car->type == TLONG) ? tan((double)values->car->value) : tan(values->car->dvalue);
     return make_double(root, r);
 }
@@ -1579,7 +1592,7 @@ static Obj *prim_atan(void *root, Obj **env, Obj **list) {
         return error("Malformed arctan");
     Obj *values = eval_list(root, env, list);
     if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
-        return error("atan takes only numbers");
+        return error("atan takes only LONG or DOUBLE");
     double r = (values->car->type == TLONG) ? atan((double)values->car->value) : atan(values->car->dvalue);
     return make_double(root, r);
 }
@@ -1590,7 +1603,7 @@ static Obj *prim_ln(void *root, Obj **env, Obj **list) {
         return error("Malformed ln");
     Obj *values = eval_list(root, env, list);
     if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
-        return error("ln takes only numbers");
+        return error("ln takes only LONG or DOUBLE");
     double r = (values->car->type == TLONG) ? log2((double)values->car->value) : log2(values->car->dvalue);
     return make_double(root, r);
 }
@@ -1601,7 +1614,7 @@ static Obj *prim_log10(void *root, Obj **env, Obj **list) {
         return error("Malformed log10");
     Obj *values = eval_list(root, env, list);
     if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
-        return error("log10 takes only numbers");
+        return error("log10 takes only LONG or DOUBLE");
     double r = (values->car->type == TLONG) ? log10((double)values->car->value) : log10(values->car->dvalue);
     return make_double(root, r);
 }
@@ -1612,7 +1625,7 @@ static Obj *prim_sqrt(void *root, Obj **env, Obj **list) {
         return error("Malformed sqrt");
     Obj *values = eval_list(root, env, list);
     if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
-        return error("sqrt takes only numbers");
+        return error("sqrt takes only LONG or DOUBLE");
     double r = (values->car->type == TLONG) ? (double)values->car->value : values->car->dvalue;
     if (r < 0)
         return error("Cannot make sqrt of negative number. NO COMPLEX");
@@ -1625,7 +1638,7 @@ static Obj *prim_exp(void *root, Obj **env, Obj **list) {
         return error("Malformed exp");
     Obj *values = eval_list(root, env, list);
     if ((values->car->type != TLONG) && (values->car->type != TDOUBLE))
-        return error("exp takes only numbers");
+        return error("exp takes only LONG or DOUBLE");
     double r = (values->car->type == TLONG) ? exp((double)values->car->value) : exp(values->car->dvalue);
     return make_double(root, r);
 }
@@ -1633,18 +1646,35 @@ static Obj *prim_exp(void *root, Obj **env, Obj **list) {
 // (expt <integer> | <double> <integer> | <double>)
 static Obj *prim_expt(void *root, Obj **env, Obj **list) {
     Obj *args = eval_list(root, env, list);
+    bignum a,b,c;
+    int bigexpt = 0;
+    
     if (length(args) != 2)
         return error("malformed expt");
     Obj *x = args->car;
     Obj *y = args->cdr->car;
     if ((x->type != TLONG && x->type != TDOUBLE) ||
         (y->type != TLONG && y->type != TDOUBLE))
-        return error("expt takes only numbers");
+        return error("expt takes only LONG or DOUBLE");
     if (x->type == TDOUBLE || y->type == TDOUBLE) {
         double v1 = (x->type == TLONG) ? (double)x->value : x->dvalue;
         double v2 = (y->type == TLONG) ? (double)y->value : y->dvalue;
         return make_double(root, pow(v1,v2));
     }
+    if (x->type == TLONG) {
+        if (checkoverflow(x->value, y->value)) {
+            if (y->type == TLONG) {
+                bigexpt = 1;
+                long_to_bignum(x->value, &b);
+                long_to_bignum(x->value, &a);
+                for (int i=1;i<y->value;i++) {
+                    multiply_bignum(&a, &b, &c);
+                    memcpy(&a,&c,sizeof(bignum));
+                }
+            }
+        }
+    }
+    if (bigexpt) return make_bignum(root, &c);
     return make_long(root, powf(x->value,y->value));
 }
 
