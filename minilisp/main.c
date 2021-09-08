@@ -687,25 +687,27 @@ static Obj *read_special_num(void *root, FILE *f) {
             sign = MINUS;
         } else {
             sign = PLUS;
-            ungetc(c,f);                // there is no +
+            //ungetc(c,f);                // there is no +
         }
-        while (isdigit((c=fgetc(f)))) {
-            re = read_number(c, f);
-        }
+        
+        re = read_number(c - '0', f);
         re *= sign;
         
+        c = fgetc(f); // skip space
+        c = fgetc(f);
         // *** IMAGINARY PART ***
         if (c == '-') {
             sign = MINUS;
         } else {
             sign = PLUS;
-            ungetc(c,f);                // there is no +
+            //ungetc(c,f);                // there is no +
         }
-        while (isdigit((c=fgetc(f)))) {
-            im = read_number(c, f);
-        }
+        
+        im = read_number(c - '0', f);
         im *= sign;
+        
         z1 = CMPLX(re,im);
+        fgetc(f); // skip )
         return make_complex(root, z1);
     }
     return Nil;
@@ -784,6 +786,7 @@ static void print(Obj *obj) {
         return
     CASE(TLONG, "%ld", obj->value);
     CASE(TDOUBLE, "%lf", obj->dvalue);
+    CASE(TCMPX, "#C(%lf %lf)", creal(obj->cvalue), cimag(obj->cvalue));
     CASE(TSYMBOL, "%s", obj->name);
     CASE(TSTRING, "%s", obj->str);
     CASE(TPRIMITIVE, "<primitive>");
@@ -921,6 +924,7 @@ static Obj *eval(void *root, Obj **env, Obj **obj) {
     case TLONG:
     case TDOUBLE:
     case TBIGN:
+    case TCMPX:
     case TSTRING:
     case TPRIMITIVE:
     case TFUNCTION:
